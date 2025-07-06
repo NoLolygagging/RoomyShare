@@ -1,10 +1,14 @@
-from flask import Flask
+from flask import Flask, send_from_directory
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="dist")
 
 @app.route("/")
 def home():
-    return "Hello! This is a test webpage showing that flask works!"
+    return send_from_directory(app.static_folder, "index.html")
+
+@app.route('/<path:path>')
+def static_proxy(path):
+    return send_from_directory(app.static_folder, path)
 
 if __name__ == "__main__":
     app.run(debug=True)
