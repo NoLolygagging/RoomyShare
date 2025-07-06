@@ -12,7 +12,9 @@ const CreateRoomCard = () => {
   const [roomDuration, setRoomDuration] = useState("");
   const navigate = useNavigate();
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    console.log("Create Room button clicked");
+
     const duration = parseInt(roomDuration);
     if (!duration || duration < 5 || duration > 1440) {
       toast({
@@ -24,8 +26,16 @@ const CreateRoomCard = () => {
     }
     // Generate random room code and navigate
     const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    await fetch("/api/CreateRoom", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ roomCode, duration })
+    });
+
     navigate(`/room?code=${roomCode}&duration=${duration}&creator=true`);
   };
+
 
   return (
     <Card className="hover:shadow-xl transition-shadow duration-300 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-400 shadow-lg">
@@ -51,9 +61,9 @@ const CreateRoomCard = () => {
             onChange={(e) => setRoomDuration(e.target.value)}
             className="mt-1 bg-amber-50 border-2 border-amber-400 focus:border-orange-500 font-mono"
           />
-          <p className="text-sm text-amber-800 mt-1 font-mono">Minimum 5 minutes, maximum 1440 minutes (24 hours)</p>
+          <p className="text-sm text-amber-800 mt-1 font-mono">this is a test change (24 hours)</p>
         </div>
-        <Button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-amber-700 via-amber-800 to-yellow-800 hover:from-amber-800 hover:via-amber-900 hover:to-yellow-900 text-white font-bold tracking-wide shadow-lg border border-orange-400">
+        <Button type="button" onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-amber-700 via-amber-800 to-yellow-800 hover:from-amber-800 hover:via-amber-900 hover:to-yellow-900 text-white font-bold tracking-wide shadow-lg border border-orange-400">
           CREATE ROOM
         </Button>
       </CardContent>

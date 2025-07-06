@@ -10,7 +10,7 @@ const JoinRoomCard = () => {
   const [joinName, setJoinName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const navigate = useNavigate();
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     if (!joinName.trim()) {
       toast({
         title: "Name required",
@@ -27,6 +27,23 @@ const JoinRoomCard = () => {
       });
       return;
     }
+
+    const response = await fetch("/api/JoinRoom", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ joinName, joinCode })
+    });
+
+    if (!response.ok) {
+    const data = await response.json();
+    toast({
+      title: "Room not found",
+      description: data.message || "The room code you entered does not exist.",
+      variant: "destructive"
+    });
+    return;
+  }
+
     // Navigate to room with parameters
     navigate(`/room?code=${joinCode}&name=${joinName}`);
   };
