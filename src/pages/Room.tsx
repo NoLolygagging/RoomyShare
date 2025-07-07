@@ -43,7 +43,7 @@ const Room = () => {
   const [connectedUsers] = useState([userName]);
   
   // Mock uploaded files list (around 30 items as requested)
-  const [uploadedFiles, setUploadedFiles] = useState([
+  const [uploadedFiles, setUploadedFiles] = useState([ //This needs to be removed before launch as these are nothing burger files for testing
     "document_final_v2.pdf", "presentation_slides.pptx", "budget_2024.xlsx",
     "meeting_notes.docx", "project_timeline.pdf", "design_mockups.zip",
     "code_backup.tar.gz", "client_feedback.txt", "invoice_template.xlsx",

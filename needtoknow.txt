@@ -1,0 +1,10 @@
+
+//Pages//
+    main.tsx handles imports that are used by a bunch of other files.
+    Room.tsx handles the front and UI interacts that is used by the backend room file, it is also the base of the actual web page for rooms.
+    Index.tsx is the landing page for roomy share and is the holder of the "cards" that are displayed on it, each card does its own thing as explained in their own sections
+    NotFound.tsx is the page for any place on the roomy share domain that isn't a real webpage.
+
+//Components//
+    AdvertisementCard.tsx is the card that is a place holder for advertising space.
+    
