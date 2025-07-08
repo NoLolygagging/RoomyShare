@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,37 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, Download, Clock, Shield, ArrowLeft, RefreshCw, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 const Room = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  // Generate better room code (4 letters + 3 numbers)
-  const generateRoomCode = () => {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const numbers = '0123456789';
-    let code = '';
-    
-    // 4 random letters
-    for (let i = 0; i < 4; i++) {
-      code += letters.charAt(Math.floor(Math.random() * letters.length));
-    }
-    
-    // 3 random numbers
-    for (let i = 0; i < 3; i++) {
-      code += numbers.charAt(Math.floor(Math.random() * numbers.length));
-    }
-    
-    return code;
-  };
-
-  const roomCode = searchParams.get("code") || generateRoomCode();
-  const userName = searchParams.get("name") || "Anonymous";
-  const initialDuration = parseInt(searchParams.get("duration") || "60");
-  const isCreator = searchParams.get("creator") === "true";
+  // State for room data (will be set from URL params or session restore)
+  const [roomCode, setRoomCode] = useState(searchParams.get("code") || "");
+  const [userName, setUserName] = useState(searchParams.get("name") || "Anonymous");
+  const [isCreator, setIsCreator] = useState(searchParams.get("creator") === "true");
   
-  const [timeRemaining, setTimeRemaining] = useState(initialDuration * 60);
-  const [accessCode, setAccessCode] = useState("1234");
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [accessCode, setAccessCode] = useState("");
   const [accessCodeTime, setAccessCodeTime] = useState(30);
   
   // Only show actually connected users (remove placeholders)
@@ -61,39 +53,94 @@ const Room = () => {
     return Math.floor(1000 + Math.random() * 9000).toString();
   };
 
-  // Countdown timer effect
+  // AI SESSION STARTS HERE
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 0) {
+    const checkSession = async () => {
+      const guestToken = localStorage.getItem('guestToken');
+      if (guestToken && !roomCode) { // Only check if we don't already have room data from URL
+        try {
+          const response = await fetch('/api/CheckSession', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guestToken })
+          });
+          const data = await response.json();
+          
+          if (data.sessionValid) {
+            // Restore room state from session
+            setRoomCode(data.roomCode);
+            setUserName(data.username);
+            setIsCreator(data.isHost);
+            toast({
+              title: "Session Restored",
+              description: "Welcome back to your room!",
+            });
+          } else {
+            // Invalid session, clear token and redirect to home if no room data
+            localStorage.removeItem('guestToken');
+            if (!roomCode) {
+              navigate('/');
+            }
+          }
+        } catch (error) {
+          console.error('Session check failed:', error);
+          localStorage.removeItem('guestToken');
+          if (!roomCode) {
+            navigate('/');
+          }
+        }
+      }
+    };
+
+    checkSession();
+  }, []); // Empty dependency array to run only on mount
+
+  useEffect(() => {
+    if (!roomCode) return; // Don't start timer until we have a room code
+    
+    const pollTimer = setInterval(async () => {
+      const res = await fetch("/api/RoomTimer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ roomCode }),
+      });
+      const data = await res.json();
+      if (!data.success || data.timeLeft <= 0) {
+        if (!isCreator) {
           toast({
-            title: "Room Expired",
-            description: "This room has been automatically deleted.",
+            title: "Room Closed",
+            description: "The host has closed this room or it has expired.",
             variant: "destructive",
           });
-          navigate("/");
-          return 0;
         }
-        return prev - 1;
-      });
+        localStorage.removeItem('guestToken'); // Clear session on room close
+        navigate("/");
+        return;
+      }
+      setTimeRemaining(data.timeLeft);
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [navigate]);
+    return () => clearInterval(pollTimer);
+  }, [roomCode, navigate, toast, isCreator]);
 
   useEffect(() => {
-    const accessTimer = setInterval(() => {
-      setAccessCodeTime((prev) => {
-        if (prev <= 1) {
-          setAccessCode(generateAccessCode());
-          return 30;
-        }
-        return prev - 1;
+    if (!roomCode) return; // Don't start polling until we have a room code
+    
+    const pollAccessCode = setInterval(async () => {
+      const res = await fetch("/api/CurrentAccessCode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomCode }),
       });
+      const data = await res.json();
+      if (data.success) {
+        setAccessCode(data.accessCode);
+        setAccessCodeTime(data.secondsLeft);
+      }
     }, 1000);
-
-    return () => clearInterval(accessTimer);
-  }, []);
+    return () => clearInterval(pollAccessCode);
+  }, [roomCode]);
 
   // Format time display
   const formatTime = (seconds: number) => {
@@ -126,6 +173,21 @@ const Room = () => {
     });
   };
 
+  const handleDeleteRoom = async () => {
+     await fetch("/api/DeleteRoom", {
+    method: "POST",
+    credentials: "include",
+  });
+    localStorage.removeItem('guestToken'); // Clear session when deleting room
+    toast({
+      title: "Room Deleted",
+      description: "The room has been permanently deleted.",
+      variant: "destructive",
+    });
+    navigate("/");
+  };
+
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#7A5B47', fontFamily: 'monospace' }}>
       {/* Header */}
@@ -147,7 +209,37 @@ const Room = () => {
                 className="h-8 w-auto"
               />
               <Shield className="h-6 w-6 text-orange-300" />
-              <h1 className="text-xl font-bold text-orange-100 tracking-wider">ROOMYSHARE</h1>
+              <h1 className="text-xl font-bold text-orange-100 tracking-wider">ROOMYSHARE</h1> 
+              {/* Delete button */}
+               {isCreator && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="destructive"
+                    className="flex items-center space-x-2 bg-red-700 hover:bg-red-800 font-mono font-bold"
+                  >
+                    <span>DELETE ROOM</span>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-gradient-to-br from-orange-50 to-orange-100 border-4 border-orange-500">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-orange-900 font-mono font-bold">DELETE ROOM</AlertDialogTitle>
+                    <AlertDialogDescription className="text-orange-800 font-mono">
+                      Are you sure you want to delete this room? This action cannot be undone and all files will be permanently deleted.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="font-mono font-bold">CANCEL</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleDeleteRoom}
+                      className="bg-red-700 hover:bg-red-800 font-mono font-bold"
+                    >
+                      DELETE ROOM
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             </div>
           </div>
         </div>

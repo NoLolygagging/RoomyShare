@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,16 +23,24 @@ const CreateRoomCard = () => {
       });
       return;
     }
-    // Generate random room code and navigate
-    const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-    
-    await fetch("/api/CreateRoom", {
+
+    // Only send duration, let backend generate the code
+    const res = await fetch("/api/CreateRoom", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ roomCode, duration })
+      body: JSON.stringify({ duration })
     });
 
-    navigate(`/room?code=${roomCode}&duration=${duration}&creator=true`);
+    const data = await res.json();
+    if (data.success) {
+      navigate(`/room?code=${data.roomCode}&creator=true`);
+    } else {
+      toast({
+        title: "Error",
+        description: "Could not create room.",
+        variant: "destructive",
+      });
+    }
   };
 
 
