@@ -220,10 +220,21 @@ def current_access_code():
     seconds_left = 30 - (int(time.time()) % 30) #Once more this was generated, I don't understand the time calculations. But this is how long the access code is valid for.
     return jsonify({"success": True, "accessCode": code, "secondsLeft": seconds_left})
 
-
+"""
 @app.route('/<path:path>')
 def static_proxy(path):
     return send_from_directory(app.static_folder, path)
+"""
+
+@app.route('/<path:path>')
+def static_proxy(path):
+    # Serve static files if they exist, otherwise serve index.html for SPA routes
+    full_path = os.path.join(app.static_folder, path)
+    if os.path.exists(full_path):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, "index.html")
+
 
 @app.route("/api/CheckSession", methods=["POST"])
 def check_session():
