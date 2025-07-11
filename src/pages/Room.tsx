@@ -35,19 +35,8 @@ const Room = () => {
   // Connected users state
   const [connectedUsers, setConnectedUsers] = useState<Array<{username: string, isOwner: boolean}>>([]);
   
-  // Mock uploaded files list (around 30 items as requested)
-  const [uploadedFiles, setUploadedFiles] = useState([ //This needs to be removed before launch as these are nothing burger files for testing
-    "document_final_v2.pdf", "presentation_slides.pptx", "budget_2024.xlsx",
-    "meeting_notes.docx", "project_timeline.pdf", "design_mockups.zip",
-    "code_backup.tar.gz", "client_feedback.txt", "invoice_template.xlsx",
-    "marketing_plan.pdf", "user_manual.docx", "database_schema.sql",
-    "api_documentation.md", "test_results.csv", "logo_variations.zip",
-    "contract_draft.pdf", "financial_report.xlsx", "team_photo.jpg",
-    "wireframes.fig", "style_guide.pdf", "requirements_doc.docx",
-    "performance_metrics.xlsx", "backup_files.zip", "changelog.txt",
-    "user_stories.pdf", "architecture_diagram.png", "deployment_guide.md",
-    "security_audit.pdf", "training_materials.zip", "compliance_checklist.xlsx"
-  ]);
+  // uploaded files list
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
   // Generate random access code
   const generateAccessCode = () => {
@@ -104,6 +93,7 @@ const Room = () => {
       }
     };
 
+    fetchFiles(); 
     checkSession();
   }, []); // Empty dependency array to run only on mount
 
@@ -194,7 +184,7 @@ const Room = () => {
     }
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
-
+ /*
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
@@ -213,6 +203,79 @@ const Room = () => {
       description: `Downloading ${fileName}...`,
     });
   };
+*/
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("file", files[i]);
+      }
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Files Uploaded",
+          description: `${files.length} file(s) uploaded successfully.`,
+        });
+        fetchFiles(); // Refresh file list
+      } else {
+        toast({
+          title: "Upload Failed",
+          description: data.message || "Could not upload files.",
+          variant: "destructive",
+        });
+      }
+    };
+ 
+  const handleDownload = async (fileName: string) => {
+    const res = await fetch("/api/download", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: fileName }),
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast({
+        title: "Download Started",
+        description: `Downloading ${fileName}...`,
+      });
+    } else {
+      toast({
+        title: "Download Failed",
+        description: "Could not download file.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const fetchFiles = async () => {
+    const res = await fetch("/api/list_files", {
+      method: "POST",
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (data.success) {
+      setUploadedFiles(data.files);
+    }
+  }
 
   const handleDeleteRoom = async () => {
      await fetch("/api/DeleteRoom", {
