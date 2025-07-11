@@ -348,55 +348,6 @@ def download_file():
     return send_from_directory(folder_path, filename, as_attachment=True)
 
 
-@app.route("/api/upload", methods=["POST"])
-def upload_file():
-    room_code = session.get('room_code')
-    print(room_code)
-    room = Room.query.filter_by(room_code=room_code).first()
-    folder_path = os.path.join("../folder_shares", room.file_path)
-
-    files = request.files.getlist('file')
-
-    for file in files:
-        if file.filename == '':
-            continue
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(folder_path,filename))
-
-    return jsonify({"success": True, "message": "Files saved successfully"}), 200
-
-@app.route("/api/list_files", methods=["POST"])
-def list_file():
-
-    room_code = session.get('room_code')
-    print(room_code)
-    room = Room.query.filter_by(room_code=room_code).first()
-    folder_path = os.path.join("../folder_shares", room.file_path)
-
-    if not os.path.exists(folder_path):
-        return jsonify({"success": True, "files": []})
-    
-    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-    return jsonify({"success": True, "files": files}), 200
-
-@app.route("/api/download", methods=["POST"])
-def download_file():
-    
-    data = request.json
-    filename = data.get('filename')
-
-    room_code = session.get('room_code')
-    room = Room.query.filter_by(room_code=room_code).first()
-    folder_path = os.path.join("../folder_shares", room.file_path)
-
-    file_path = os.path.join(folder_path, filename)
-
-    if not os.path.exists(file_path):
-        return jsonify({"success": False, "message": "File not found."}), 404
-
-    return send_from_directory(folder_path, filename, as_attachment=True)
-
-
 def generate_folder_name(length): #Used to generate a random folder name.
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
