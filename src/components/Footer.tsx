@@ -15,7 +15,7 @@ const Footer = () => {
               © {new Date().getFullYear()} Roomyshare. All rights reserved.
             </p>
             <p className="text-orange-400 font-mono text-xs mt-1">
-              Created by the people seen on clicking the spinning floppy disk.
+              Created the <span className="text-orange-300 font-bold cursor-help" title="psst..click the spinning floppy disk"> team.</span>
             </p>
           </div>
         </div>

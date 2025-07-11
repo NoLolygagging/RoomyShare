@@ -466,7 +466,6 @@ Access code: ${accessCode}`;
                 <div className="text-center">
                   <Upload className="h-6 w-6 text-orange-700 mx-auto mb-2" />
                   <p className="text-orange-800 font-mono font-bold text-xs">DROP FILES HERE</p>
-                  <p className="text-xs text-orange-700 mt-1 font-mono">MAX: 2GB</p>
                 </div>
               </div>
             </CardContent>
