@@ -31,23 +31,25 @@ const Room = () => {
   const [accessCode, setAccessCode] = useState("");
   const [accessCodeTime, setAccessCodeTime] = useState(30);
   const [canCopyUrl, setCanCopyUrl] = useState(false);
+  const [usedSpace, setUsedSpace] = useState(0);
+  const [maxSpace, setMaxSpace] = useState(150); // 150 GB limit per room
+  const [percentUsed, setPercentUsed] = useState(0);
+  const [isCheckingStorage, setIsCheckingStorage] = useState(false);
   
   // Connected users state
   const [connectedUsers, setConnectedUsers] = useState<Array<{username: string, isOwner: boolean}>>([]);
   
-  // Mock uploaded files list (around 30 items as requested)
-  const [uploadedFiles, setUploadedFiles] = useState([ //This needs to be removed before launch as these are nothing burger files for testing
-    "document_final_v2.pdf", "presentation_slides.pptx", "budget_2024.xlsx",
-    "meeting_notes.docx", "project_timeline.pdf", "design_mockups.zip",
-    "code_backup.tar.gz", "client_feedback.txt", "invoice_template.xlsx",
-    "marketing_plan.pdf", "user_manual.docx", "database_schema.sql",
-    "api_documentation.md", "test_results.csv", "logo_variations.zip",
-    "contract_draft.pdf", "financial_report.xlsx", "team_photo.jpg",
-    "wireframes.fig", "style_guide.pdf", "requirements_doc.docx",
-    "performance_metrics.xlsx", "backup_files.zip", "changelog.txt",
-    "user_stories.pdf", "architecture_diagram.png", "deployment_guide.md",
-    "security_audit.pdf", "training_materials.zip", "compliance_checklist.xlsx"
-  ]);
+  // uploaded files list
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+
+  // Upload progress state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState(0);
+  const [uploadTimeRemaining, setUploadTimeRemaining] = useState<string>("Calculating...");
+  const [uploadedSoFar, setUploadedSoFar] = useState(0);
+  const [totalUploadSize, setTotalUploadSize] = useState(0);
+  const [uploadStartTime, setUploadStartTime] = useState<number>(0);
 
   // Generate random access code
   const generateAccessCode = () => {
@@ -104,6 +106,7 @@ const Room = () => {
       }
     };
 
+    fetchFiles(); 
     checkSession();
   }, []); // Empty dependency array to run only on mount
 
@@ -183,6 +186,40 @@ const Room = () => {
     return () => clearInterval(pollConnectedUsers);
   }, [roomCode]);
 
+  // Check storage space
+  // Function to check storage space - extracted for reuse
+  const checkStorageSpace = async () => {
+    if (!roomCode) return;
+    
+    try {
+      setIsCheckingStorage(true);
+      const response = await fetch("/api/CheckSpace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomCode }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUsedSpace(data.usedGB);
+        setMaxSpace(data.maxGB);
+        setPercentUsed(data.percentUsed);
+      }
+    } catch (error) {
+      console.error("Failed to check storage space:", error);
+    } finally {
+      setIsCheckingStorage(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!roomCode) return;
+
+    checkStorageSpace();
+    const interval = setInterval(checkStorageSpace, 3000); // Check every 3 seconds for more responsive updates
+    return () => clearInterval(interval);
+  }, [roomCode]);
+
   // Format time display
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -195,24 +232,202 @@ const Room = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const fileNames = Array.from(files).map(file => file.name);
-      setUploadedFiles(prev => [...prev, ...fileNames]);
+  
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+
+      const maxFileSize = 149.8 * 1024 * 1024 * 1024; // 149.8 GB in bytes
+      const maxTotalSpace = 150 * 1024 * 1024 * 1024; // 150 GB in bytes
+      const availableSpace = (maxSpace - usedSpace) * 1024 * 1024 * 1024; // Available space in bytes
+
+      // Check individual file sizes and calculate total upload size
+      let totalUploadSize = 0;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileSizeGB = file.size / (1024 * 1024 * 1024);
+        
+        // Check if individual file is too large
+        if (file.size > maxFileSize) {
+          toast({
+            title: "File Too Large",
+            description: `File '${file.name}' size (${fileSizeGB.toFixed(2)} GB) is too close to 150 GB limit. Maximum file size is 149.8 GB.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        totalUploadSize += file.size;
+      }
+
+      // Check if total upload would exceed available space
+      if (totalUploadSize > availableSpace) {
+        const totalUploadGB = totalUploadSize / (1024 * 1024 * 1024);
+        const availableSpaceGB = availableSpace / (1024 * 1024 * 1024);
+        toast({
+          title: "Insufficient Space",
+          description: `Too little space left. Available: ${availableSpaceGB.toFixed(2)} GB, Required: ${totalUploadGB.toFixed(2)} GB.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Initialize upload progress tracking
+      setIsUploading(true);
+      setUploadProgress(0);
+      setUploadedSoFar(0);
+      setTotalUploadSize(totalUploadSize);
+      setUploadStartTime(Date.now());
+      setUploadTimeRemaining("Calculating...");
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("file", files[i]);
+      }
+      
+      // Add room code to the form data
+      formData.append("roomCode", roomCode);
+
+      // Create XMLHttpRequest for upload progress tracking
+      const xhr = new XMLHttpRequest();
+      
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          setUploadProgress(percentComplete);
+          setUploadedSoFar(event.loaded);
+          
+          // Calculate upload speed and time remaining
+          const currentTime = Date.now();
+          const elapsedTime = (currentTime - uploadStartTime) / 1000; // seconds
+          
+          if (elapsedTime > 0) {
+            const uploadSpeedBps = event.loaded / elapsedTime; // bytes per second
+            const uploadSpeedMBps = uploadSpeedBps / (1024 * 1024); // MB per second
+            setUploadSpeed(uploadSpeedMBps);
+            
+            const remainingBytes = event.total - event.loaded;
+            const timeRemainingSeconds = remainingBytes / uploadSpeedBps;
+            
+            // Format time remaining
+            const formatTime = (seconds: number) => {
+              if (seconds < 60) return `${Math.round(seconds)}s`;
+              if (seconds < 3600) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.round(seconds % 60);
+                return `${mins}m ${secs}s`;
+              }
+              const hours = Math.floor(seconds / 3600);
+              const mins = Math.floor((seconds % 3600) / 60);
+              return `${hours}h ${mins}m`;
+            };
+            
+            setUploadTimeRemaining(formatTime(timeRemainingSeconds));
+          }
+        }
+      });
+
+      // Handle upload completion
+      xhr.onload = function() {
+        setIsUploading(false);
+        
+        if (xhr.status === 200) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data.success) {
+              toast({
+                title: "Files Uploaded",
+                description: `${files.length} file(s) uploaded successfully.`,
+              });
+              fetchFiles(); // Refresh file list
+              checkStorageSpace(); // Immediately update storage info
+              
+              // Reset upload progress
+              setUploadProgress(0);
+              setUploadedSoFar(0);
+              setTotalUploadSize(0);
+            } else {
+              toast({
+                title: "Upload Failed",
+                description: data.message || "Could not upload files.",
+                variant: "destructive",
+              });
+            }
+          } catch (e) {
+            toast({
+              title: "Upload Failed",
+              description: "Invalid server response.",
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({
+            title: "Upload Failed",
+            description: `Server error: ${xhr.status}`,
+            variant: "destructive",
+          });
+        }
+      };
+
+      // Handle upload error
+      xhr.onerror = function() {
+        setIsUploading(false);
+        toast({
+          title: "Upload Failed",
+          description: "Network error occurred during upload.",
+          variant: "destructive",
+        });
+      };
+
+      // Start the upload
+      xhr.open('POST', '/api/upload');
+      xhr.send(formData);
+    };
+ 
+  const handleDownload = async (fileName: string) => {
+    const res = await fetch("/api/download", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: fileName, roomCode }),
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
       toast({
-        title: "Files Uploaded",
-        description: `${files.length} file(s) uploaded successfully.`,
+        title: "Download Started",
+        description: `Downloading ${fileName}...`,
+      });
+    } else {
+      toast({
+        title: "Download Failed",
+        description: "Could not download file.",
+        variant: "destructive",
       });
     }
   };
 
-  const handleDownload = (fileName: string) => {
-    toast({
-      title: "Download Started",
-      description: `Downloading ${fileName}...`,
+  const fetchFiles = async () => {
+    const res = await fetch("/api/list_files", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomCode }),
     });
-  };
+    const data = await res.json();
+    if (data.success) {
+      setUploadedFiles(data.files);
+    }
+  }
 
   const handleDeleteRoom = async () => {
      await fetch("/api/DeleteRoom", {
@@ -330,8 +545,7 @@ Access code: ${accessCode}`;
                 alt="Roomyshare Logo" 
                 className="h-8 w-auto"
               />
-              <Shield className="h-6 w-6 text-orange-300" />
-              <h1 className="text-xl font-bold text-orange-100 tracking-wider">ROOMYSHARE</h1> 
+              <h1 className="text-xl font-bold text-orange-100 tracking-wider">ROOMYSHARE</h1>
               
               {/* Leave Room button for NON-OWNERS only */}
               {!isCreator && (
@@ -462,13 +676,44 @@ Access code: ${accessCode}`;
                   multiple
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={isUploading}
                 />
                 <div className="text-center">
                   <Upload className="h-6 w-6 text-orange-700 mx-auto mb-2" />
                   <p className="text-orange-800 font-mono font-bold text-xs">DROP FILES HERE</p>
-                  <p className="text-xs text-orange-700 mt-1 font-mono">MAX: 2GB</p>
+                  <p className="text-xs text-orange-700 mt-1 font-mono">MAX: 150GB per room</p>
                 </div>
               </div>
+              
+              {/* Upload Progress Display */}
+              {isUploading && (
+                <div className="mt-4 p-3 bg-white rounded-lg border-2 border-orange-400">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-mono font-bold text-orange-900">UPLOADING...</span>
+                    <span className="text-xs font-mono text-orange-700">{uploadProgress.toFixed(1)}%</span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-orange-200 rounded-full h-2 mb-3">
+                    <div 
+                      className="bg-gradient-to-r from-orange-600 to-orange-500 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
+                  </div>
+                  
+                  {/* Upload Stats */}
+                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                    <div className="text-orange-700">
+                      <div>Speed: {uploadSpeed.toFixed(1)} MB/s</div>
+                      <div>Remaining: {uploadTimeRemaining}</div>
+                    </div>
+                    <div className="text-orange-700 text-right">
+                      <div>{(uploadedSoFar / (1024 * 1024)).toFixed(1)} MB</div>
+                      <div>/ {(totalUploadSize / (1024 * 1024)).toFixed(1)} MB</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -523,8 +768,43 @@ Access code: ${accessCode}`;
           </Card>
         </div>
 
+        {/* Storage Info */}
+          <div className="bg-orange-100 border border-orange-300 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <span className="text-orange-800 font-mono text-sm font-bold">STORAGE USED</span>
+                {isCheckingStorage && (
+                  <RefreshCw className="h-3 w-3 text-orange-600 animate-spin" />
+                )}
+              </div>
+              <span className="text-orange-900 font-mono text-sm font-bold">
+                {usedSpace.toFixed(2)} / {maxSpace} GB
+              </span>
+            </div>
+            <div className="w-full bg-orange-200 rounded-full h-3">
+              <div 
+                className={`h-3 rounded-full transition-all duration-500 ease-in-out ${
+                  percentUsed > 90 
+                    ? 'bg-gradient-to-r from-red-500 to-red-700' 
+                    : percentUsed > 75 
+                      ? 'bg-gradient-to-r from-yellow-500 to-orange-500' 
+                      : 'bg-gradient-to-r from-green-500 to-orange-500'
+                }`}
+                style={{ width: `${percentUsed}%` }}
+              ></div>
+            </div>
+            <div className="text-center mt-1">
+              <span className={`font-mono text-xs font-bold ${
+                percentUsed > 90 ? 'text-red-700' : 'text-orange-700'
+              }`}>
+                {percentUsed}% USED
+              </span>
+              <span className="text-orange-600 font-mono text-xs ml-2">(Auto-updating every 3s)</span>
+            </div>
+          </div>
+
         {/* Connected Users - Bottom Center */}
-        <div className="text-center">
+        <div className="text-center mt-12">
           <Card className="inline-block bg-gradient-to-br from-orange-50 to-orange-100 border-4 border-orange-500 shadow-xl">
             <CardHeader className="bg-gradient-to-r from-orange-800 to-orange-700 text-white rounded-t-lg">
               <CardTitle className="text-lg font-mono font-bold tracking-widest">CONNECTED USERS</CardTitle>

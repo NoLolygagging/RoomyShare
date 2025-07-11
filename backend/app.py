@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory, session
 import os, random, string, shutil, time, secrets, threading
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.utils import secure_filename
 from datetime import datetime
 
 
@@ -15,6 +16,8 @@ ANIMALS = [
     "Lion", "Otter", "Falcon", "Turtle", "Eagle", "Moose", "Squirrel", "Giraffe", "Zebra", "Kangaroo", "Above"
 ]
 
+FOLDER_PATH = "../folder_shares"
+
 app = Flask(__name__, static_folder="../dist")
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///rooms.db'
 app.secret_key = "wvnwEKyr89r2y98fyh29cyc98y9wyf89f29fFYFyfYFQYFYFdontstealthiskeyLOL" #Secret key for session management, don't steal this key, else i'll be sad.
@@ -24,7 +27,7 @@ db = SQLAlchemy(app)
 class Room(db.Model): #This class handles the rooms created by users.
     id = db.Column(db.Integer, primary_key=True)
     room_code = db.Column(db.String(10), nullable=False)
-    access_code = db.Column(db.String(4), nullable=False, unique=True) #Access code for the room, generated every 30 seconds.
+    access_code = db.Column(db.String(4), nullable=False) #Access code for the room, generated every 30 seconds.
     file_path = db.Column(db.String(10), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow) 
@@ -67,31 +70,49 @@ def cleanup_expired_rooms(): #A while loop that runs every 60 seconds to check f
 def update_access_codes(): #Update access codes every 30 seconds
     while True:
         try:
-            # Wait for the next 30-second interval
+            # Wait until we're at the start of a new 30-second interval
             current_time = int(time.time())
-            wait_time = 30 - (current_time % 30)
-            time.sleep(wait_time)
+            seconds_into_interval = current_time % 30
+            sleep_time = 30 - seconds_into_interval
+            time.sleep(sleep_time)
             
             with app.app_context():
                 active_rooms = Room.query.all()
-                for room in active_rooms:
-                    # Generate new access code
-                    new_access_code = generate_access_code()
-                    room.access_code = new_access_code
-                    print(f"Updated access code for room {room.room_code}: {new_access_code}")
                 
-                db.session.commit()
+                if not active_rooms:
+                    continue
+                
+                # Update all rooms at once to keep them synchronized
+                for room in active_rooms:
+                    try:
+                        new_access_code = generate_access_code()
+                        old_code = room.access_code
+                        room.access_code = new_access_code
+                        print(f"Updated access code for room {room.room_code}: {old_code} -> {new_access_code}")
+                    except Exception as room_error:
+                        print(f"Error updating room {room.room_code}: {room_error}")
+                
+                # Commit all changes at once
+                try:
+                    db.session.commit()
+                except Exception as commit_error:
+                    print(f"Error committing access code updates: {commit_error}")
+                    db.session.rollback()
                         
         except Exception as e:
-            print(f"Error in access code update task: {e}") 
-        
-        time.sleep(30)  # Update every 30 seconds
+            print(f"Error in access code update task: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
 
 cleanup_thread = threading.Thread(target=cleanup_expired_rooms, daemon=True) #Clean up your threads.
 cleanup_thread.start()
 
 access_code_thread = threading.Thread(target=update_access_codes, daemon=True) #Access code update thread
 access_code_thread.start()
+
+print("Background threads started: cleanup and access code updater")
 
 
 @app.route("/")
@@ -133,8 +154,7 @@ def create_room():
     data = request.json
     duration = data.get("duration")
     
-    #Check if user already has an active session
-    existing_token = None
+    existing_token = None #Check if user already has an active session FIRST
     for key in ['guestToken', 'guest_token']:
         existing_token = request.headers.get(key) or data.get(key)
         if existing_token:
@@ -142,8 +162,7 @@ def create_room():
     
     if existing_token:
         existing_user = ConnectedUsers.query.filter_by(guest_token=existing_token).first()
-        if existing_user:
-            #OWNERS CANNOT CREATE MULTIPLE ROOMS - THEY MUST DELETE THEIR EXISTING ROOM FIRST
+        if existing_user: #OWNERS CANNOT CREATE MULTIPLE ROOMS - THEY MUST DELETE THEIR EXISTING ROOM FIRST
             if existing_user.is_owner:
                 return jsonify({
                     "success": False, 
@@ -164,7 +183,7 @@ def create_room():
     file_path = folder_creation()
     
     #Generate initial access code
-    initial_access_code = generate_access_code() #Could I maybe make the front end use this for URL copying? Yeah, do I wanna? No, not really. Timer it is.
+    initial_access_code = generate_access_code() #Could I maybe make the front end use this for URL copying? Yeah, do I wanna? No, not really. Timer it is, it will prevent issues with codes expiring to quickly.
 
     new_room = Room(room_code=room_code, file_path=file_path, duration=duration, access_code=initial_access_code)
     db.session.add(new_room)
@@ -297,23 +316,172 @@ def room_timer():
     
     return jsonify({"success": True, "timeLeft": time_left})
 
-'''
-@app.route("api/upload", methods=["POST"])
+
+@app.route("/api/upload", methods=["POST"])
 def upload_file():
-    return
+    # Try to get room code from form data first, then fallback to session
+    room_code = request.form.get('roomCode') or session.get('room_code')
+    
+    if not room_code:
+        return jsonify({"success": False, "message": "Room code required"}), 400
+    
+    print(f"Upload for room: {room_code}")
+    room = Room.query.filter_by(room_code=room_code).first()
+    
+    if not room:
+        return jsonify({"success": False, "message": "Room not found"}), 404
+    
+    folder_path = os.path.join(FOLDER_PATH, room.file_path)
+    max_space_gb = 150  # 150 GB limit per room
+    max_file_size_gb = 149.8  # Maximum individual file size (149.8 GB)
+    
+    # Function to get current folder size
+    def get_folder_size(folder_path):
+        total_size = 0
+        if os.path.exists(folder_path):
+            for dirpath, dirnames, filenames in os.walk(folder_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+        return total_size
+    
+    # Get current space usage
+    current_used_bytes = get_folder_size(folder_path)
+    current_used_gb = current_used_bytes / (1024**3)
+    available_space_gb = max_space_gb - current_used_gb
 
+    files = request.files.getlist('file')
+    
+    # Calculate total size of files being uploaded
+    total_upload_size_bytes = 0
+    file_sizes = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+        
+        # Get file size by seeking to end
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+        
+        file_size_gb = file_size / (1024**3)
+        file_sizes.append((file, file_size, file_size_gb))
+        total_upload_size_bytes += file_size
+        
+        # Check if individual file is too large (over 149.8 GB)
+        if file_size_gb > max_file_size_gb:
+            return jsonify({
+                "success": False, 
+                "message": f"File '{file.filename}' size ({file_size_gb:.2f} GB) is too close to 150 GB limit. Maximum file size is {max_file_size_gb} GB."
+            }), 400
+    
+    # Calculate estimated upload time
+    def calculate_upload_time(size_bytes):
+        # Assume average upload speeds (conservative estimates)
+        # These are in bytes per second
+        speeds = {
+            "slow": 1024 * 1024,      # 1 MB/s (slow connection)
+            "medium": 5 * 1024 * 1024,  # 5 MB/s (average connection) 
+            "fast": 20 * 1024 * 1024    # 20 MB/s (fast connection)
+        }
+        
+        estimates = {}
+        for speed_name, speed_bps in speeds.items():
+            time_seconds = size_bytes / speed_bps
+            
+            if time_seconds < 60:
+                estimates[speed_name] = f"{int(time_seconds)}s"
+            elif time_seconds < 3600:
+                minutes = int(time_seconds / 60)
+                seconds = int(time_seconds % 60)
+                estimates[speed_name] = f"{minutes}m {seconds}s"
+            else:
+                hours = int(time_seconds / 3600)
+                minutes = int((time_seconds % 3600) / 60)
+                estimates[speed_name] = f"{hours}h {minutes}m"
+        
+        return estimates
+    
+    # Check if total upload would exceed available space
+    total_upload_gb = total_upload_size_bytes / (1024**3)
+    if total_upload_gb > available_space_gb:
+        return jsonify({
+            "success": False,
+            "message": f"Too little space left. Available: {available_space_gb:.2f} GB, Required: {total_upload_gb:.2f} GB."
+        }), 400
 
-@app.route("api/download", methods=["POST"])
+    # Get upload time estimates before starting upload
+    upload_estimates = calculate_upload_time(total_upload_size_bytes)
+
+    # If all checks pass, save the files
+    for file, file_size, file_size_gb in file_sizes:
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(folder_path, filename))
+
+    return jsonify({
+        "success": True, 
+        "message": "Files saved successfully",
+        "uploadEstimates": upload_estimates,
+        "totalSizeGB": round(total_upload_gb, 2)
+    }), 200
+
+@app.route("/api/list_files", methods=["POST"])
+def list_file():
+    data = request.json
+    room_code = data.get("roomCode") or session.get('room_code')
+    
+    if not room_code:
+        return jsonify({"success": False, "message": "Room code required"}), 400
+    
+    print(f"List files for room: {room_code}")
+    room = Room.query.filter_by(room_code=room_code).first()
+    
+    if not room:
+        return jsonify({"success": False, "message": "Room not found"}), 404
+    
+    folder_path = os.path.join(FOLDER_PATH, room.file_path)
+
+    if not os.path.exists(folder_path):
+        return jsonify({"success": True, "files": []})
+    
+    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+    return jsonify({"success": True, "files": files}), 200
+
+@app.route("/api/download", methods=["POST"])
 def download_file():
-    return
-'''
+    
+    data = request.json
+    filename = data.get('filename')
+    room_code = data.get('roomCode') or session.get('room_code')
+    
+    if not room_code:
+        return jsonify({"success": False, "message": "Room code required"}), 400
+    
+    if not filename:
+        return jsonify({"success": False, "message": "Filename required"}), 400
+
+    room = Room.query.filter_by(room_code=room_code).first()
+    
+    if not room:
+        return jsonify({"success": False, "message": "Room not found"}), 404
+    
+    folder_path = os.path.join(FOLDER_PATH, room.file_path)
+    file_path = os.path.join(folder_path, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({"success": False, "message": "File not found."}), 404
+
+    return send_from_directory(folder_path, filename, as_attachment=True)
+
 
 def generate_folder_name(length): #Used to generate a random folder name.
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 
 def folder_creation(): #Used to create a folder with a random name.
-    folder_path = "../folder_shares"
+    folder_path = FOLDER_PATH
     room_folder = generate_folder_name(10)
     folder_paths = []
 
@@ -333,7 +501,7 @@ def folder_creation(): #Used to create a folder with a random name.
     return room_folder
 
 def folder_deletion(folder_name): #Used to delete a folder with a given name.
-    folder_path = "../folder_shares"
+    folder_path = FOLDER_PATH
     folder_to_delete = os.path.join(folder_path, folder_name)
 
     if os.path.exists(folder_to_delete):
@@ -342,11 +510,29 @@ def folder_deletion(folder_name): #Used to delete a folder with a given name.
     else:
         print(f"Folder {folder_name} does not exist.")
 
+
 def generate_room_code(length=7): #Used to generate a random room code. It is a combination of uppercase letters and digits, pretty straightforward.
     chars = string.ascii_uppercase + string.digits
     return ''.join(random.choices(chars, k=length))
 
-def generate_access_code(): #Generate a random 4-digit access code
+def generate_access_code(): #Generate a unique 4-digit access code
+    max_attempts = 100  # Prevent infinite loops
+    attempts = 0
+    
+    while attempts < max_attempts:
+        code = f"{random.randint(1000, 9999)}"
+        # Check if this code is already in use by any active room
+        try:
+            existing_room = Room.query.filter_by(access_code=code).first()
+            if not existing_room:
+                return code
+        except Exception as e:
+            print(f"Database error in generate_access_code: {e}")
+            
+        attempts += 1
+        
+    # If we somehow can't find a unique code after 100 attempts, return a random one
+    # This should practically never happen with 9000 possible codes
     return f"{random.randint(1000, 9999)}"
 
 def generate_anon_username():
@@ -363,7 +549,11 @@ def current_access_code():
     if not room:
         return jsonify({"success": False, "message": "Room not found"}), 404
     
-    seconds_left = 30 - (int(time.time()) % 30) #Time until next code refresh
+    # Calculate exact seconds left until next 30-second interval
+    current_time = int(time.time())
+    seconds_into_interval = current_time % 30
+    seconds_left = 30 - seconds_into_interval
+    
     return jsonify({"success": True, "accessCode": room.access_code, "secondsLeft": seconds_left})
 
 
@@ -454,6 +644,182 @@ def check_join_eligibility():
                 return jsonify({"success": False, "message": f"You are already connected to room {user.room_code}"}), 400
     
     return jsonify({"success": True, "canJoin": True})
+
+@app.route("/api/EstimateUploadTime", methods=["POST"])
+def estimate_upload_time():
+    data = request.json
+    room_code = data.get("roomCode")
+    file_sizes = data.get("fileSizes", [])  # Array of file sizes in bytes
+    
+    if not room_code:
+        return jsonify({"success": False, "message": "Room code required"}), 400
+    
+    if not file_sizes:
+        return jsonify({"success": False, "message": "File sizes required"}), 400
+    
+    # Calculate total upload size
+    total_upload_size_bytes = sum(file_sizes)
+    total_upload_gb = total_upload_size_bytes / (1024**3)
+    
+    # Calculate upload time estimates with percentage breakdown
+    def calculate_upload_estimates_with_percentage(size_bytes):
+        speeds = {
+            "slow": 1024 * 1024,      # 1 MB/s (slow connection)
+            "medium": 5 * 1024 * 1024,  # 5 MB/s (average connection) 
+            "fast": 20 * 1024 * 1024    # 20 MB/s (fast connection)
+        }
+        
+        estimates = {}
+        for speed_name, speed_bps in speeds.items():
+            total_time_seconds = size_bytes / speed_bps
+            
+            # Format total time
+            if total_time_seconds < 60:
+                time_str = f"{int(total_time_seconds)}s"
+            elif total_time_seconds < 3600:
+                minutes = int(total_time_seconds / 60)
+                seconds = int(total_time_seconds % 60)
+                time_str = f"{minutes}m {seconds}s"
+            else:
+                hours = int(total_time_seconds / 3600)
+                minutes = int((total_time_seconds % 3600) / 60)
+                time_str = f"{hours}h {minutes}m"
+            
+            # Calculate percentage milestones (every 10%)
+            milestones = []
+            for percent in range(10, 101, 10):
+                milestone_bytes = (percent / 100) * size_bytes
+                milestone_time = milestone_bytes / speed_bps
+                
+                if milestone_time < 60:
+                    milestone_str = f"{int(milestone_time)}s"
+                elif milestone_time < 3600:
+                    m = int(milestone_time / 60)
+                    s = int(milestone_time % 60)
+                    milestone_str = f"{m}m {s}s"
+                else:
+                    h = int(milestone_time / 3600)
+                    m = int((milestone_time % 3600) / 60)
+                    milestone_str = f"{h}h {m}m"
+                
+                milestones.append({
+                    "percentage": percent,
+                    "timeElapsed": milestone_str,
+                    "bytesTransferred": round(milestone_bytes / (1024**2), 2)  # MB
+                })
+            
+            estimates[speed_name] = {
+                "totalTime": time_str,
+                "totalTimeSeconds": int(total_time_seconds),
+                "milestones": milestones,
+                "speedMBps": round(speed_bps / (1024**2), 1)
+            }
+        
+        return estimates
+    
+    upload_estimates = calculate_upload_estimates_with_percentage(total_upload_size_bytes)
+    
+    return jsonify({
+        "success": True,
+        "totalSizeGB": round(total_upload_gb, 2),
+        "totalSizeMB": round(total_upload_size_bytes / (1024**2), 2),
+        "estimates": upload_estimates
+    })
+
+@app.route("/api/CalculateUploadProgress", methods=["POST"])
+def calculate_upload_progress():
+    data = request.json
+    file_size = data.get("fileSize")  #Total file size in bytes
+    uploaded_so_far = data.get("uploadedSoFar") #Bytes uploaded so far
+    time_started = data.get("timeStarted") #Timestamp when upload started (milliseconds)
+    
+    if not all([file_size, uploaded_so_far is not None, time_started]):
+        return jsonify({"success": False, "message": "Missing required parameters"}), 400
+    
+ 
+    current_time_ms = int(time.time() * 1000) #Calculate current upload speed
+    elapsed_time_seconds = (current_time_ms - time_started) / 1000.0 #Current time in milliseconds 
+    
+    if elapsed_time_seconds <= 0:
+        return jsonify({
+            "success": True,
+            "uploadSpeed": 0,
+            "timeRemaining": "Calculating...",
+            "percentComplete": 0,
+            "uploadedSoFar": uploaded_so_far,
+            "totalSize": file_size
+        })
+    
+
+    upload_speed = uploaded_so_far / elapsed_time_seconds
+
+    remaining_bytes = file_size - uploaded_so_far #Calculate remaining data and time
+    time_remaining_seconds = remaining_bytes / upload_speed if upload_speed > 0 else 0
+
+    def format_time(seconds): #Format time remaining, thanks co-pilot for this function.
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            minutes = int(seconds / 60)
+            secs = int(seconds % 60)
+            return f"{minutes}m {secs}s"
+        else:
+            hours = int(seconds / 3600)
+            minutes = int((seconds % 3600) / 60)
+            return f"{hours}h {minutes}m"
+    
+    #Calculate percentage complete
+    percent_complete = min(100, (uploaded_so_far / file_size) * 100)
+    
+    #Calculate upload speed in MB/s for display
+    upload_speed_mbps = upload_speed / (1024 * 1024)
+    
+    return jsonify({
+        "success": True,
+        "uploadSpeed": round(upload_speed, 2),  #Bytes per second
+        "uploadSpeedMBps": round(upload_speed_mbps, 2),  #MB per second
+        "timeRemaining": format_time(time_remaining_seconds),
+        "timeRemainingSeconds": int(time_remaining_seconds),
+        "percentComplete": round(percent_complete, 1),
+        "uploadedSoFar": uploaded_so_far,
+        "totalSize": file_size,
+        "remainingBytes": remaining_bytes,
+        "elapsedTime": format_time(elapsed_time_seconds)
+    })
+
+@app.route("/api/CheckSpace", methods=["POST"])
+def check_storage_space():
+    data = request.json
+    room_code = data.get("roomCode")
+    if not room_code:
+        return jsonify({"success": False, "message": "Room code required"}), 400
+    room = Room.query.filter_by(room_code=room_code).first()
+    if not room:
+        return jsonify({"success": False, "message": "Room not found"}), 404
+    
+    folder_path = os.path.join(FOLDER_PATH, room.file_path)
+    max_space_gb = 150  #150 GB limit per room
+    
+    def get_folder_size(folder_path):
+        total_size = 0
+        if os.path.exists(folder_path):
+            for dirpath, dirnames, filenames in os.walk(folder_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+        return total_size
+    
+    used_bytes = get_folder_size(folder_path)
+    used_gb = used_bytes / (1024**3)  # Convert bytes to GB 
+    percent_used = min(100, int((used_gb / max_space_gb) * 100))
+    
+    return jsonify({
+        "success": True,
+        "usedGB": round(used_gb, 2),
+        "maxGB": max_space_gb,
+        "percentUsed": percent_used
+    })
 
 if __name__ == "__main__":
     app.run(debug=True)
