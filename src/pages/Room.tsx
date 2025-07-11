@@ -184,27 +184,8 @@ const Room = () => {
     }
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
- /*
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const fileNames = Array.from(files).map(file => file.name);
-      setUploadedFiles(prev => [...prev, ...fileNames]);
-      toast({
-        title: "Files Uploaded",
-        description: `${files.length} file(s) uploaded successfully.`,
-      });
-    }
-  };
 
-  const handleDownload = (fileName: string) => {
-    toast({
-      title: "Download Started",
-      description: `Downloading ${fileName}...`,
-    });
-  };
-*/
-
+  
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.target.files;
       if (!files || files.length === 0) return;
