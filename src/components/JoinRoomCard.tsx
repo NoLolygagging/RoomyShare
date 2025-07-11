@@ -1,16 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 
 const JoinRoomCard = () => {
-  const [roomCode, setRoomCode] = useState("");
+  const [searchParams] = useSearchParams();
+  const [roomCode, setRoomCode] = useState(searchParams.get("join") || "");
   const [accessCode, setAccessCode] = useState("");
   const navigate = useNavigate();
+
+  // Auto-focus access code if room code is pre-filled
+  useEffect(() => {
+    if (searchParams.get("join")) {
+      const accessCodeInput = document.getElementById("accessCode");
+      if (accessCodeInput) {
+        accessCodeInput.focus();
+      }
+    }
+  }, [searchParams]);
 
   const handleJoinRoom = async () => {
     if (roomCode.length < 5) {
@@ -30,10 +41,16 @@ const JoinRoomCard = () => {
       return;
     }
 
+    const guestToken = localStorage.getItem('guestToken');
+    const requestBody: { roomCode: string; accessCode: string; guestToken?: string } = { roomCode, accessCode };
+    if (guestToken) {
+      requestBody.guestToken = guestToken;
+    }
+
     const response = await fetch("/api/JoinRoom", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ roomCode, accessCode })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -46,7 +63,17 @@ const JoinRoomCard = () => {
       return;
     }
 
-    navigate(`/room?code=${roomCode}&access=${accessCode}`);
+    const data = await response.json();
+    if (data.success && data.guestToken) {
+      // Store the guest token for session management
+      localStorage.setItem('guestToken', data.guestToken);
+      toast({
+        title: "Joined successfully!",
+        description: "Welcome to the room.",
+      });
+      // Navigate with only the room code - no sensitive data in URL
+      navigate(`/room?code=${roomCode}`);
+    }
   };
 
   return (
@@ -75,7 +102,7 @@ const JoinRoomCard = () => {
         <div>
           <Label htmlFor="access-code" className="text-amber-900 font-bold font-mono">4-DIGIT ACCESS CODE</Label>
           <Input
-            id="access-code"
+            id="accessCode"
             placeholder="1234"
             value={accessCode}
             onChange={e => setAccessCode(e.target.value.replace(/\D/g, "").slice(0, 4))}

@@ -25,15 +25,30 @@ const CreateRoomCard = () => {
     }
 
     // Only send duration, let backend generate the code
+    const guestToken = localStorage.getItem('guestToken');
+    const requestBody: { duration: number; guestToken?: string } = { duration };
+    if (guestToken) {
+      requestBody.guestToken = guestToken;
+    }
+
     const res = await fetch("/api/CreateRoom", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ duration })
+      body: JSON.stringify(requestBody)
     });
 
     const data = await res.json();
     if (data.success) {
-      navigate(`/room?code=${data.roomCode}&creator=true`);
+      // Store the guest token for session management
+      if (data.guestToken) {
+        localStorage.setItem('guestToken', data.guestToken);
+      }
+      toast({
+        title: "Room Created!",
+        description: `Room ${data.roomCode} created successfully.`,
+      });
+      // Navigate with only the room code - no sensitive data in URL
+      navigate(`/room?code=${data.roomCode}`);
     } else {
       toast({
         title: "Error",
@@ -68,7 +83,7 @@ const CreateRoomCard = () => {
             onChange={(e) => setRoomDuration(e.target.value)}
             className="mt-1 bg-amber-50 border-2 border-amber-400 focus:border-orange-500 font-mono"
           />
-          <p className="text-sm text-amber-800 mt-1 font-mono">this is a test change (24 hours)</p>
+          <p className="text-sm text-amber-800 mt-1 font-mono">Room Duration: 5 to 1440 minutes (24 HRS)</p>
         </div>
         <Button type="button" onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-amber-700 via-amber-800 to-yellow-800 hover:from-amber-800 hover:via-amber-900 hover:to-yellow-900 text-white font-bold tracking-wide shadow-lg border border-orange-400">
           CREATE ROOM

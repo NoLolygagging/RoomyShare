@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Download, Clock, Shield, ArrowLeft, RefreshCw, FileText } from "lucide-react";
+import { Upload, Download, Clock, Shield, ArrowLeft, RefreshCw, FileText, Copy } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -24,15 +24,16 @@ const Room = () => {
   
   // State for room data (will be set from URL params or session restore)
   const [roomCode, setRoomCode] = useState(searchParams.get("code") || "");
-  const [userName, setUserName] = useState(searchParams.get("name") || "Anonymous");
-  const [isCreator, setIsCreator] = useState(searchParams.get("creator") === "true");
+  const [userName, setUserName] = useState("");
+  const [isCreator, setIsCreator] = useState(false);
   
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [accessCode, setAccessCode] = useState("");
   const [accessCodeTime, setAccessCodeTime] = useState(30);
+  const [canCopyUrl, setCanCopyUrl] = useState(false);
   
-  // Only show actually connected users (remove placeholders)
-  const [connectedUsers] = useState([userName]);
+  // Connected users state
+  const [connectedUsers, setConnectedUsers] = useState<Array<{username: string, isOwner: boolean}>>([]);
   
   // Mock uploaded files list (around 30 items as requested)
   const [uploadedFiles, setUploadedFiles] = useState([ //This needs to be removed before launch as these are nothing burger files for testing
@@ -57,7 +58,8 @@ const Room = () => {
   useEffect(() => {
     const checkSession = async () => {
       const guestToken = localStorage.getItem('guestToken');
-      if (guestToken && !roomCode) { // Only check if we don't already have room data from URL
+      
+      if (guestToken) {
         try {
           const response = await fetch('/api/CheckSession', {
             method: 'POST',
@@ -67,33 +69,54 @@ const Room = () => {
           const data = await response.json();
           
           if (data.sessionValid) {
-            // Restore room state from session
-            setRoomCode(data.roomCode);
-            setUserName(data.username);
-            setIsCreator(data.isHost);
-            toast({
-              title: "Session Restored",
-              description: "Welcome back to your room!",
-            });
-          } else {
-            // Invalid session, clear token and redirect to home if no room data
-            localStorage.removeItem('guestToken');
-            if (!roomCode) {
-              navigate('/');
+            // Only restore if the room code matches or if no room code was provided
+            if (!roomCode || data.roomCode === roomCode) {
+              setRoomCode(data.roomCode);
+              setUserName(data.username);
+              setIsCreator(data.isHost);
+              toast({
+                title: "Session Restored",
+                description: "Welcome back to your room!",
+              });
+              return; // Exit early - valid session found
             }
           }
+          
+          // Invalid session or wrong room - clear token
+          localStorage.removeItem('guestToken');
         } catch (error) {
           console.error('Session check failed:', error);
           localStorage.removeItem('guestToken');
-          if (!roomCode) {
-            navigate('/');
-          }
         }
+      }
+      
+      // No valid session - redirect to join process if we have a room code
+      if (roomCode) {
+        toast({
+          title: "Access Required",
+          description: "Please enter the access code to join this room.",
+          variant: "destructive",
+        });
+        navigate(`/?join=${roomCode}`);
+      } else {
+        // No room code and no session - go to home
+        navigate('/');
       }
     };
 
     checkSession();
   }, []); // Empty dependency array to run only on mount
+
+  // 10-second timer to enable copy URL functionality
+  useEffect(() => {
+    if (roomCode && userName) {
+      const timer = setTimeout(() => {
+        setCanCopyUrl(true);
+      }, 10000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [roomCode, userName]);
 
   useEffect(() => {
     if (!roomCode) return; // Don't start timer until we have a room code
@@ -142,6 +165,24 @@ const Room = () => {
     return () => clearInterval(pollAccessCode);
   }, [roomCode]);
 
+  useEffect(() => {
+    if (!roomCode) return; // Don't start polling until we have a room code
+    
+    const pollConnectedUsers = setInterval(async () => {
+      const res = await fetch("/api/GetConnectedUsers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomCode }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConnectedUsers(data.users);
+      }
+    }, 2000); // Poll every 2 seconds for connected users
+    
+    return () => clearInterval(pollConnectedUsers);
+  }, [roomCode]);
+
   // Format time display
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -187,6 +228,87 @@ const Room = () => {
     navigate("/");
   };
 
+  const handleLeaveRoom = async () => {
+    const guestToken = localStorage.getItem('guestToken');
+    if (!guestToken) {
+      toast({
+        title: "Error",
+        description: "No session found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/LeaveRoom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guestToken }),
+      });
+
+      if (response.ok) {
+        localStorage.removeItem('guestToken');
+        toast({
+          title: "Left Room",
+          description: "You have successfully left the room.",
+        });
+        navigate("/");
+      } else {
+        const data = await response.json();
+        toast({
+          title: "Error",
+          description: data.message || "Failed to leave room.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to leave room.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyRoomURL = () => {
+    if (!canCopyUrl) {
+      toast({
+        title: "Please Wait",
+        description: "Room information is still loading. Please wait a moment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!accessCode) {
+      toast({
+        title: "Access Code Loading",
+        description: "Please wait for the access code to load.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const homeURL = window.location.origin;
+    const copyText = `Hey! Come join my room!
+${homeURL}
+
+Room code: ${roomCode}
+Access code: ${accessCode}`;
+    
+    navigator.clipboard.writeText(copyText).then(() => {
+      toast({
+        title: "Room Info Copied!",
+        description: "Room details have been copied to your clipboard.",
+      });
+    }).catch(() => {
+      toast({
+        title: "Copy Failed",
+        description: "Unable to copy room info to clipboard.",
+        variant: "destructive",
+      });
+    });
+  };
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#7A5B47', fontFamily: 'monospace' }}>
@@ -204,15 +326,42 @@ const Room = () => {
             </Button>
             <div className="flex items-center space-x-3">
               <img 
-                src="/lovable-uploads/773e41a9-e062-4b0c-9237-202057fccd00.png" 
+                src="/lovable-uploads/roomy.png" 
                 alt="Roomyshare Logo" 
                 className="h-8 w-auto"
               />
               <Shield className="h-6 w-6 text-orange-300" />
               <h1 className="text-xl font-bold text-orange-100 tracking-wider">ROOMYSHARE</h1> 
-              {/* Delete button */}
-               {isCreator && (
-              <AlertDialog>
+              
+              {/* Leave Room button for NON-OWNERS only */}
+              {!isCreator && (
+                <Button 
+                  variant="outline"
+                  onClick={handleLeaveRoom}
+                  className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-800 text-white border-gray-600 font-mono font-bold"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>LEAVE ROOM</span>
+                </Button>
+              )}
+              
+              {/* Host controls */}
+              {isCreator && (
+                <div className="flex items-center space-x-2">
+                  <Button 
+                    variant="outline"
+                    onClick={handleCopyRoomURL}
+                    disabled={!canCopyUrl}
+                    className={`flex items-center space-x-2 font-mono font-bold ${
+                      canCopyUrl 
+                        ? 'bg-blue-700 hover:bg-blue-800 text-white border-blue-600' 
+                        : 'bg-gray-500 text-gray-300 border-gray-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span>{canCopyUrl ? 'COPY ROOM URL' : 'LOADING... (10s)'}</span>
+                  </Button>
+                  <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button 
                     variant="destructive"
@@ -239,7 +388,8 @@ const Room = () => {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -384,9 +534,17 @@ const Room = () => {
                 {connectedUsers.map((user, index) => (
                   <Badge 
                     key={index} 
-                    className="px-3 py-1 font-mono font-bold bg-orange-200 text-orange-900"
+                    className={`px-3 py-1 font-mono font-bold ${
+                      user.isOwner 
+                        ? 'bg-red-200 text-red-900' 
+                        : user.username === userName 
+                          ? 'bg-orange-200 text-orange-900' 
+                          : 'bg-blue-200 text-blue-900'
+                    }`}
                   >
-                    {user} (YOU)
+                    {user.username}
+                    {user.isOwner && ' (HOST)'}
+                    {user.username === userName && !user.isOwner && ' (YOU)'}
                   </Badge>
                 ))}
               </div>

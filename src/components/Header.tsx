@@ -8,7 +8,7 @@ const Header = () => {
         <div className="flex items-center justify-center">
           <div className="flex items-center space-x-4">
             <img 
-              src="/lovable-uploads/773e41a9-e062-4b0c-9237-202057fccd00.png" 
+              src="/lovable-uploads/roomy.png" 
               alt="Roomyshare Logo" 
               className="h-12 w-auto"
             />
