@@ -8,55 +8,57 @@ const Developers = () => {
   const navigate = useNavigate();
 
   const developers = [ // I need to stop spelling things wrong. (╯°Д°)╯︵ ┻━┻
+    
+  {
+    id: 1,
+    name: "Luke McEachern",
+    role: "Algorithm Designer, Programming Specialist & Network Storage Specialist",
+    description: "Luke McEachern has been around technology since he was a kid. His love for all things with a 1 and 0 has led him to completing an Information Technology Services diploma at the Southern Alberta Institute of Technology. With skills in OOP, networking, cloud architecture, and even an award in algorithm design, he was crucial in bringing RoomyShare to life. He looks forward to how the world of technology will evolve and hopes to build a meaningful career with the hobby he grew up with.",
+    image: "/lovable-uploads/dev1.png",
+    linkedin: ""
+  },
+  {
+    id: 2,
+    name: "Muhammad Mohammad", 
+    role: "Flask Specialist, Dependency Manager & Networking Specialist",
+    description: "Muhammad is a final-semester IT student at the Southern Alberta Institute of Technology. He has worked on RoomyShare with his fellow developers, specifically on file upload and download, as well as room functionalities. He currently possesses strong experience in networking, virtualization, server administration, and IT service management platforms like ServiceNow. He also has skills in communication, teamwork, and documentation from the many projects he has participated in, including RoomyShare.",
+    image: "/lovable-uploads/dev2.png",
+    linkedin: ""
+  },
+  {
+    id: 3,
+    name: "Janeah Mae Obaldo",
+    role: "Booth Designer, Frontend Developer & Project Delivery Organizer",
+    description: "Janeah Mae Obaldo is an international student currently enrolled in the Information Technology Services program at the Southern Alberta Institute of Technology. Her passion for gaming and interest in PC building sparked her curiosity in the IT field. With a growing enthusiasm for technology, she is developing her skills in the field, aiming to build a strong foundation for a future career in the IT industry.",
+    image: "/lovable-uploads/dev4.png",
+    linkedin: ""
+  },
+  {
+    id: 4,
+    name: "Victoria Louise Taningco",
+    role: "Booth Designer, Frontend Developer & Project Delivery Organizer",
+    description: "Hi! I'm Victoria Taningco, and I'm an international student from the Philippines. I have discovered that my heart is in learning about technology. When I was in high school, I was part of our school's robotics club. I want to know how technology works in the background, and I want to enhance my skills and knowledge in the IT industry. Since technology is getting broader and wider every day, I want to learn and test the different trending applications that most people use. That's why this project is very important to me—it's not just a project; it's a core part of who I am.",
+    image: "/lovable-uploads/dev5.png",
+    linkedin: ""
+  },
+  {
+    id: 5,
+    name: "Mitchell Castro",
+    role: "Assistant Project Delivery Organizer, Backend Developer & Testing Specialist",
+    description: "Hello, my name is Mitchell Castro, and I’m an IT student at SAIT. I took the IT program because of my love and interest in computers. It started with building PCs—having to learn how each part works with the others sparked my interest in the world of technology. Coming into this program, I had little to no knowledge about technologies. As I reach the end of my time at SAIT, I have learned a lot, and I am excited to apply the knowledge I have gained in the real world and continue developing my skills.",
+    image: "/lovable-uploads/dev3.png",
+    linkedin: ""
+  },
+  {
+    id: 6,
+    name: "Umar Mohammed",
+    role: "Initial Project Visionary, Frontend Developer & Testing Specialist",
+    description: "I am Umar Mohammed, a final-semester IT student at the Southern Alberta Institute of Technology. My passion for technology grew as I worked hands-on with networking, automation, firewalls, and virtualization. I am fascinated by how systems work behind the scenes and enjoy building real solutions using tools like Proxmox, Ansible, and Palo Alto. As tech continues to evolve rapidly, I'm driven to stay ahead by learning, testing, and applying what I know in meaningful ways. This project matters to me because it reflects my growth, dedication, and the future I see for myself in the IT industry.",
+    image: "/lovable-uploads/dev6.png",
+    linkedin: ""
+  }
 
-    {
-      id: 1,
-      name: "Luke McEachern",
-      role: "Algorithm Designer, Programing Specialist & Network Storage Specialist",
-      description: "Luke McEachern has been around technology since he was a kid. His love for all things with a 1 and 0, has led him to closing out a Information Technology Services diploma at the Southern Alberta Institute of Technology. With skills in OOP, networking, cloud architecture, and even a award in algorithm design, he was crucial in bringing Roomyshare to life. He looks forward to how the world of technology with evolve and hopes to build a meaningful career with the hobby he grew up with.",
-      image: "/lovable-uploads/dev1.png",
-      linkedin: ""
-    },
-    {
-      id: 2,
-      name: "Muhammad Mohammad", 
-      role: "Flask Specialist, Dependency Manager & Networking Specialist",
-      description: "Muhammad is a last semester IT student at the Southern Alberta Institute of technology. He has worked on RoomyShare with his fellow developers, specifically on file upload and download and room functionalities. He currently possesses strong experience in networking, virtualization, server administration, and IT service management platforms like ServiceNow. He also has skills in communication, teamwork, and documentation from the many projects he participated in including RoomyShare.",
-      image: "/lovable-uploads/dev2.png",
-      linkedin: ""
-    },
-    {
-      id: 3,
-      name: "Janeah Mae Obaldo",
-      role: "Booth Designer, Frontend Developer & Project Delivery Organizer",
-      description: "Janeah Mae Obaldo is an international student currently enrolled in the Information Technology Services program at the Southern Alberta Institute of Technology. Her passion for gaming and interest in PC building sparked her curiosity in the IT field. With a growing enthusiasm for technology, she is developing her skills in the field of technology, aiming to build a strong foundation for a future career in the IT industry.",
-      image: "/lovable-uploads/dev4.png",
-      linkedin: ""
-    },
-    {
-      id: 4,
-      name: "Victoria Louise Taningco",
-      role: "Booth Designer, Frontend Developer & Project Delivery Organizer",
-      description: "Hi! I'm Victoria Taningco and I'm an international student from the Philippines. I have found out that my heart is in learning about technology. When I was in high school, I was part of our school's robotics club.I want to know how technology works in the background and I want to enhance my skills and knowledge in the IT industry. Since technology is getting broader and wider day by day, I want to learn and test the different trending applications that most people use. And that's why this project is very important to me, it's not just a project, it's a core part of who I am.",
-      image: "/lovable-uploads/dev5.png",
-      linkedin: ""
-    },
-    {
-      id: 5,
-      name: "Mitchell Castro",
-      role: "Assistant Project Delivery Organizer, Backend Developer & Testing Specialist",
-      description: "Hello, My name is Mitchell Castro, an IT student at SAIT. I took the IT program for my love and interest in computers. It started with building PCs, having to learn how each parts works with each other sparks my interest in the world of technology. Coming in this program, I had little to no knowledge about technologies. As I reach my final time here on SAIT, I have learned a lot and I am excited to apply the knowledge I have learned into the real world and keep developing my skills.",
-      image: "/lovable-uploads/dev3.png",
-      linkedin: ""
-    },
-    {
-      id: 6,
-      name: "Umar Mohammed",
-      role: " Initial Project Visionary, Frontend Developer & Testing Specialist",
-      description: "I am Umar Mohammed, a final-semester IT student at Southern Alberta Institute of Technology. My passion for technology grew as I worked hands-on with networking, automation, firewalls, and virtualization. I am fascinated by how systems work behind the scenes and enjoy building real solutions using tools like Proxmox, Ansible, and Palo Alto. As tech continues to evolve rapidly, I'm driven to stay ahead by learning, testing, and applying what I know in meaningful ways. This project matters to me because it reflects my growth, dedication, and the future I see for myself in the IT industry.",
-      image: "/lovable-uploads/dev6.png",
-      linkedin: ""
-    }
+  
   ];
 
   return (
