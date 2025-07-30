@@ -20,7 +20,7 @@ const Developers = () => {
     {
       id: 2,
       name: "Muhammad Mohammad", 
-      role: "Flask Specialist, Dependency Managener & Networking Specialist",
+      role: "Flask Specialist, Dependency Manager & Networking Specialist",
       description: "Muhammad is a last semester IT student at the Southern Alberta Institute of technology. He has worked on RoomyShare with his fellow developers, specifically on file upload and download and room functionalities. He currently possesses strong experience in networking, virtualization, server administration, and IT service management platforms like ServiceNow. He also has skills in communication, teamwork, and documentation from the many projects he participated in including RoomyShare.",
       image: "/lovable-uploads/dev2.png",
       linkedin: ""
