@@ -7,7 +7,8 @@ import { ArrowLeft, Linkedin } from "lucide-react";
 const Developers = () => {
   const navigate = useNavigate();
 
-  const developers = [
+  const developers = [ // I need to stop spelling things wrong. (╯°Д°)╯︵ ┻━┻
+
     {
       id: 1,
       name: "Luke McEachern",
